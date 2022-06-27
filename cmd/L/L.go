@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/btvoidx/L"
+	"github.com/btvoidx/L/internal/color"
 	"github.com/btvoidx/L/internal/logger"
 )
 
@@ -39,9 +40,9 @@ func main() {
 		var usage = `L 0.0.0
 			
 			Usage: L --list --silent [task1 task2 ...]
-			Runs the specified task(s). Falls back to the "` + logger.Magenta("default") + `" task if no task name was specified.
+			Runs the specified task(s). Falls back to the "` + color.Magenta("default") + `" task if no task name was specified.
 
-			Example: "` + logger.Magenta("L hello") + `" with the following "` + logger.Magenta("tasks.lua") + `" file will generate an "` + logger.Magenta("output.txt") + `" file with the content "Hello World!".
+			Example: "` + color.Magenta("L hello") + `" with the following "` + color.Magenta("tasks.lua") + `" file will generate an "` + color.Magenta("output.txt") + `" file with the content "Hello World!".
 
 			'''
 			function task.hello()

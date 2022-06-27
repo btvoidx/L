@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/btvoidx/L/internal/color"
 	"github.com/btvoidx/L/internal/logger"
 	lua "github.com/yuin/gopher-lua"
 	"github.com/yuin/gopher-lua/parse"
@@ -109,7 +110,7 @@ func (e *Executor) Run(task string) (code int, err error) {
 		return 1, err
 	}
 
-	e.Logger.Write("L: running '%s'", logger.Magenta(task))
+	e.Logger.Write("L: running '%s'", color.Magenta(task))
 
 	if err := L.CallByParam(lua.P{
 		Fn:      fn,
