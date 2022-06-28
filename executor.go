@@ -29,10 +29,6 @@ type TaskMeta struct {
 	Sources      []string
 }
 
-// This timeout is highly debatable.
-// To be fair, anything under about 80ms will feel snappy for most people.
-const initTimeout = 60 * time.Millisecond
-
 func noop(l *lua.LState) int { return 0 }
 
 // Parses tasks script and compiles it for future use.
@@ -58,26 +54,10 @@ func (e *Executor) Compile() error {
 	return nil
 }
 
-func (e *Executor) loadScript(L *lua.LState, trimUnsafePackages bool) error {
+func (e *Executor) loadScript(L *lua.LState) error {
 	e.Logger.WriteEphemeral("L: loading script")
 
 	L.G.Global.RawSetString("task", &lua.LTable{})
-
-	// todo!
-	// if trimUnsafePackages {
-	// 	var unsafePackages = []string{"assert"}
-
-	// 	L.G.Global.ForEach(func(k, v lua.LValue) {
-	// 		// if v.Type() == lua.LTTable {
-
-	// 		// }
-
-	// 		for _, v := range safePackages {
-	// 			if k.String()
-	// 		}
-	// 		L.G.Global.RawSetString()
-	// 	})
-	// }
 
 	L.Push(L.NewFunctionFromProto(e.fnproto))
 	err := L.PCall(0, lua.MultRet, nil)
@@ -111,7 +91,7 @@ func (e *Executor) Run(taskName string) (code int, err error) {
 	L := lua.NewState()
 	defer L.Close()
 
-	if err := e.loadScript(L, false); err != nil {
+	if err := e.loadScript(L); err != nil {
 		return 1, err
 	}
 
@@ -140,6 +120,10 @@ func (e *Executor) Run(taskName string) (code int, err error) {
 
 // Returns all tasks from loaded script, by running it in safe-ish mode with harsh-ish timeout.
 func (e *Executor) List() ([]TaskMeta, error) {
+	// This timeout is highly debatable.
+	// To be fair, anything under about 80ms will feel snappy for most people.
+	const initTimeout = 60 * time.Millisecond
+
 	if e.taskinfoCache != nil && len(e.taskinfoCache) != 0 {
 		return e.taskinfoCache, nil
 	}
@@ -147,11 +131,23 @@ func (e *Executor) List() ([]TaskMeta, error) {
 	L := lua.NewState()
 	defer L.Close()
 
+	// https://lua-users.org/wiki/SandBoxes
+	for _, k1 := range []string{"collectgarbage", "dofile", "load", "loadfile", "print", "coroutine",
+		"module", "package", "io", "os.execute", "os.exit", "os.remove", "os.rename", "os.setenv", "os.tmpname", "debug", "newproxy"} {
+		if strings.Contains(k1, ".") {
+			k12 := strings.Split(k1, ".")
+			L.G.Global.RawGetString(k12[0]).(*lua.LTable).RawSetString(k12[1], lua.LNil)
+			continue
+		}
+
+		L.G.Global.RawSetString(k1, lua.LNil)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), initTimeout)
 	defer cancel()
 	L.SetContext(ctx)
 
-	err := e.loadScript(L, true)
+	err := e.loadScript(L)
 	if err != nil {
 		if strings.Contains(err.Error(), "context deadline exceeded") {
 			err = fmt.Errorf("script took too long to run (>%s); make sure it's not doing heavy computations outside of functions",
@@ -172,8 +168,30 @@ func (e *Executor) List() ([]TaskMeta, error) {
 			return
 		}
 
+		var description string
+
+		L.SetFuncs(L.G.Global, map[string]lua.LGFunction{
+			"description": func(l *lua.LState) int {
+				description = l.CheckString(1)
+				return 0
+			},
+			"depends": noop,
+			"defer":   noop,
+			"sources": noop,
+		})
+
+		if err := L.CallByParam(lua.P{
+			Fn:      v.(*lua.LFunction),
+			Protect: true,
+		}); err != nil {
+			if !strings.Contains(err.Error(), "attempt to call a non-function object") {
+				return
+			}
+		}
+
 		tasks = append(tasks, TaskMeta{
-			Name: k.String(),
+			Name:        k.String(),
+			Description: description,
 		})
 	})
 

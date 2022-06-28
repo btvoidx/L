@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/muesli/termenv"
@@ -144,12 +145,22 @@ func main() {
 			return
 		}
 
-		taskNames := make([]string, 0, len(tasks))
+		sort.SliceStable(tasks, func(i, j int) bool {
+			return strings.Compare(tasks[i].Name, tasks[j].Name) == -1
+		})
+
+		log.Write("L: all available tasks:")
 		for _, t := range tasks {
-			taskNames = append(taskNames, t.Name)
+			if t.Description == "" {
+				log.Write("- %s", termenv.String(t.Name))
+			} else {
+				log.Write("- %s: %s", termenv.String(t.Name), t.Description)
+			}
+			// if t.Dependencies != nil && len(t.Dependencies) != 0 {
+			// 	log.Write("  %s: %s", termenv.String(t.Name), t.Description)
+			// }
 		}
 
-		log.Write("L: all available tasks:\n- %s", strings.Join(taskNames, "\n- "))
 		return
 	}
 
