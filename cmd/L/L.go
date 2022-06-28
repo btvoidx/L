@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/muesli/termenv"
 	"github.com/spf13/pflag"
@@ -20,7 +19,6 @@ func main() {
 		silentFlag  bool
 		verboseFlag bool
 		entrypoint  string
-		timeout     time.Duration
 		initFlag    bool
 	)
 
@@ -29,7 +27,6 @@ func main() {
 	pflag.BoolVar(&silentFlag, "silent", false, "disables output from L")
 	pflag.BoolVar(&verboseFlag, "verbose", false, "enables verbose mode")
 	pflag.StringVarP(&entrypoint, "taskfile", "f", "tasks.lua", "choose tasks file")
-	pflag.DurationVarP(&timeout, "timeout", "t", 0, "sets a limit on how long each task can run; <=0 means no limit")
 	pflag.BoolVar(&initFlag, "init", false, "creates a default tasks.lua file")
 	pflag.Parse()
 
@@ -108,12 +105,6 @@ func main() {
 		return
 	}
 
-	if timeout <= 0 {
-		// Seems like a fair deal.
-		// It's not a max int64 value due to a possibility of overflow when adding L.initTimeout to this timeout.
-		timeout = 24 * 31 * time.Hour
-	}
-
 	e := L.Executor{
 		Entrypoint: entrypoint,
 		Logger:     &log,
@@ -168,7 +159,7 @@ func main() {
 	}
 
 	for _, tn := range taskNames {
-		if _, err := e.Run(tn, timeout); err != nil {
+		if _, err := e.Run(tn); err != nil {
 			log.Err("L: %s", err.Error())
 		}
 	}

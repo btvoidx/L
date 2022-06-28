@@ -88,8 +88,8 @@ func (e *Executor) loadScript(L *lua.LState, trimUnsafePackages bool) error {
 	return nil
 }
 
-// Runs a given task with a given timeout
-func (e *Executor) Run(taskName string, timeout time.Duration) (code int, err error) {
+// Runs a given task
+func (e *Executor) Run(taskName string) (code int, err error) {
 	taskList, err := e.List()
 	if err != nil {
 		return 1, err
@@ -110,10 +110,6 @@ func (e *Executor) Run(taskName string, timeout time.Duration) (code int, err er
 
 	L := lua.NewState()
 	defer L.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), initTimeout+timeout)
-	defer cancel()
-	L.SetContext(ctx)
 
 	if err := e.loadScript(L, false); err != nil {
 		return 1, err
@@ -136,10 +132,6 @@ func (e *Executor) Run(taskName string, timeout time.Duration) (code int, err er
 		Fn:      fn,
 		Protect: true,
 	}); err != nil {
-		if strings.Contains(err.Error(), "context deadline exceeded") {
-			e.Logger.Err("L: cancelled %s due to it taking too long to run (>%s); you may want to adjust your timeout argument", termenv.String(taskName), timeout)
-			return 1, nil
-		}
 		return 1, err
 	}
 
@@ -162,7 +154,7 @@ func (e *Executor) List() ([]TaskMeta, error) {
 	err := e.loadScript(L, true)
 	if err != nil {
 		if strings.Contains(err.Error(), "context deadline exceeded") {
-			err = fmt.Errorf("script took too long to run (>%s); make sure it's not doing heavy computations at definition stage",
+			err = fmt.Errorf("script took too long to run (>%s); make sure it's not doing heavy computations outside of functions",
 				initTimeout)
 		}
 		return []TaskMeta{}, err
