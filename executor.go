@@ -2,8 +2,11 @@ package L
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/btvoidx/L/internal/color"
 	"github.com/btvoidx/L/internal/logger"
@@ -12,66 +15,40 @@ import (
 )
 
 type Executor struct {
-	FilePath      string
+	Entrypoint    string
 	Logger        *logger.Logger
 	fnproto       *lua.FunctionProto
-	tasknameCache []string
+	taskinfoCache []TaskMeta
 }
+
+type TaskMeta struct {
+	Name         string
+	Description  string
+	Dependencies []string
+	Sources      []string
+}
+
+// This timeout is highly debatable.
+// To be fair, anything under about 80ms will feel snappy for most people.
+const initTimeout = 60 * time.Millisecond
 
 func noop(l *lua.LState) int { return 0 }
 
-func getTaskFn(L *lua.LState, task string) (*lua.LFunction, error) {
-	lv := L.G.Global.RawGetString("task")
-	tasks, ok := lv.(*lua.LTable)
-	if !ok {
-		return nil, fmt.Errorf("global 'task' is not a table")
-	}
-
-	lv = tasks.RawGetString(task)
-	fn, ok := lv.(*lua.LFunction)
-	if !ok {
-		if lv.Type() == lua.LTNil {
-			return nil, fmt.Errorf("task %s is not defined", task)
-		}
-		return nil, fmt.Errorf("global task.%s is not a function", task)
-	}
-
-	return fn, nil
-}
-
-func getTasks(L *lua.LState) (tasks []string, err error) {
-	lv := L.G.Global.RawGetString("task")
-	tasksTable, ok := lv.(*lua.LTable)
-	if !ok {
-		return nil, fmt.Errorf("global 'task' is of type %s; expected table", lv.Type().String())
-	}
-
-	tasks = make([]string, 0, tasksTable.Len())
-	tasksTable.ForEach(func(k, v lua.LValue) {
-		if k.Type() != lua.LTString || v.Type() != lua.LTFunction {
-			return
-		}
-
-		tasks = append(tasks, k.String())
-	})
-
-	return tasks, nil
-}
-
+// Parses tasks script and compiles it for future use.
 func (e *Executor) Compile() error {
-	file, err := os.Open(e.FilePath)
+	file, err := os.Open(e.Entrypoint)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
 
 	reader := bufio.NewReader(file)
-	chunk, err := parse.Parse(reader, e.FilePath)
+	chunk, err := parse.Parse(reader, e.Entrypoint)
 	if err != nil {
 		return fmt.Errorf("parse error: %w", err)
 	}
 
-	proto, err := lua.Compile(chunk, e.FilePath)
+	proto, err := lua.Compile(chunk, e.Entrypoint)
 	if err != nil {
 		return fmt.Errorf("compile error: %w", err)
 	}
@@ -80,14 +57,26 @@ func (e *Executor) Compile() error {
 	return nil
 }
 
-func (e *Executor) loadScript(L *lua.LState) error {
+func (e *Executor) loadScript(L *lua.LState, trimUnsafePackages bool) error {
 	e.Logger.WriteEphemeral("L: loading script")
 
 	L.G.Global.RawSetString("task", &lua.LTable{})
-	L.G.Global.RawSetString("description", L.NewFunction(noop))
-	L.G.Global.RawSetString("depends", L.NewFunction(noop))
-	L.G.Global.RawSetString("defer", L.NewFunction(noop))
-	L.G.Global.RawSetString("sources", L.NewFunction(noop))
+
+	// todo!
+	// if trimUnsafePackages {
+	// 	var unsafePackages = []string{"assert"}
+
+	// 	L.G.Global.ForEach(func(k, v lua.LValue) {
+	// 		// if v.Type() == lua.LTTable {
+
+	// 		// }
+
+	// 		for _, v := range safePackages {
+	// 			if k.String()
+	// 		}
+	// 		L.G.Global.RawSetString()
+	// 	})
+	// }
 
 	L.Push(L.NewFunctionFromProto(e.fnproto))
 	err := L.PCall(0, lua.MultRet, nil)
@@ -98,46 +87,104 @@ func (e *Executor) loadScript(L *lua.LState) error {
 	return nil
 }
 
-func (e *Executor) Run(task string) (code int, err error) {
-	L := lua.NewState()
-
-	if err := e.loadScript(L); err != nil {
-		return 1, err
-	}
-
-	fn, err := getTaskFn(L, task)
+// Runs a given task with a given timeout
+func (e *Executor) Run(taskName string, timeout time.Duration) (code int, err error) {
+	taskList, err := e.List()
 	if err != nil {
 		return 1, err
 	}
 
-	e.Logger.Write("L: running '%s'", color.Magenta(task))
+	// If taskName is not in taskList
+	if func() bool {
+		for _, t := range taskList {
+			if taskName == t.Name {
+				return false
+			}
+		}
+		return true
+	}() {
+		e.Logger.Err("L: task %s not found", color.Red(taskName))
+		return 1, nil
+	}
+
+	L := lua.NewState()
+	defer L.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), initTimeout+timeout)
+	defer cancel()
+	L.SetContext(ctx)
+
+	if err := e.loadScript(L, false); err != nil {
+		return 1, err
+	}
+
+	e.Logger.Write("L: running %s", color.Magenta(taskName))
+
+	L.SetFuncs(L.G.Global, map[string]lua.LGFunction{
+		"description": noop,
+		"depends":     noop,
+		"defer":       noop,
+		"sources":     noop,
+	})
+
+	// Guaranteed correct data types, checked by call to List() above
+	tasksTable, _ := L.G.Global.RawGetString("task").(*lua.LTable)
+	fn, _ := tasksTable.RawGetString(taskName).(*lua.LFunction)
 
 	if err := L.CallByParam(lua.P{
 		Fn:      fn,
 		Protect: true,
 	}); err != nil {
+		if strings.Contains(err.Error(), "context deadline exceeded") {
+			e.Logger.Err("L: cancelled %s due to it taking too long to run (>%s); you may want to adjust your timeout argument", color.Red(taskName), timeout)
+			return 1, nil
+		}
 		return 1, err
 	}
 
 	return 0, nil
 }
 
-func (e *Executor) List() ([]string, error) {
-	if e.tasknameCache != nil && len(e.tasknameCache) != 0 {
-		return e.tasknameCache, nil
+// Returns all tasks from loaded script, by running it in safe-ish mode with harsh-ish timeout.
+func (e *Executor) List() ([]TaskMeta, error) {
+	if e.taskinfoCache != nil && len(e.taskinfoCache) != 0 {
+		return e.taskinfoCache, nil
 	}
 
 	L := lua.NewState()
+	defer L.Close()
 
-	err := e.loadScript(L)
+	ctx, cancel := context.WithTimeout(context.Background(), initTimeout)
+	defer cancel()
+	L.SetContext(ctx)
+
+	err := e.loadScript(L, true)
 	if err != nil {
-		return []string{}, err
+		if strings.Contains(err.Error(), "context deadline exceeded") {
+			err = fmt.Errorf("script took too long to run (>%s); make sure it's not doing heavy computations at definition stage",
+				initTimeout)
+		}
+		return []TaskMeta{}, err
 	}
 
-	tasks, err := getTasks(L)
-	if err != nil {
-		return []string{}, err
+	var tasksTable *lua.LTable
+	var ok bool
+	if tasksTable, ok = L.G.Global.RawGetString("task").(*lua.LTable); !ok {
+		return nil, fmt.Errorf("global 'task' is of type %s; expected table", L.G.Global.RawGetString("task").Type().String())
 	}
+
+	tasks := make([]TaskMeta, 0, tasksTable.Len())
+	tasksTable.ForEach(func(k, v lua.LValue) {
+		if k.Type() != lua.LTString || v.Type() != lua.LTFunction {
+			return
+		}
+
+		tasks = append(tasks, TaskMeta{
+			Name: k.String(),
+		})
+	})
+
+	e.taskinfoCache = tasks
 
 	return tasks, nil
 }
