@@ -5,7 +5,6 @@ import (
 	"io"
 	"strings"
 
-	"github.com/btvoidx/L/internal/color"
 	"github.com/muesli/termenv"
 )
 
@@ -17,12 +16,26 @@ type Logger struct {
 	prevEph bool
 }
 
-func colorizeL(s string, c color.Color) string {
+var p = termenv.ColorProfile()
+var colorOk = p.Color("105")
+var colorErr = p.Color("9")
+
+func colorizeL(s string, c termenv.Color) string {
 	if !strings.HasPrefix(s, "L") {
 		return s
 	}
 
-	return strings.Replace(s, "L", c("L"), 1)
+	return strings.Replace(s, "L", termenv.String().Foreground(c).Styled("L"), 1)
+}
+
+func colorizeArguments(c termenv.Color, a []any) []any {
+	for i, v := range a {
+		if s, ok := v.(termenv.Style); ok {
+			a[i] = s.Foreground(c)
+		}
+	}
+
+	return a
 }
 
 func (l *Logger) Write(format string, a ...any) {
@@ -36,7 +49,8 @@ func (l *Logger) Write(format string, a ...any) {
 		l.prevEph = false
 	}
 
-	format = colorizeL(format, color.Magenta)
+	a = colorizeArguments(colorOk, a)
+	format = colorizeL(format, colorOk)
 	fmt.Fprintf(l.Stdout, format+"\n", a...)
 }
 
@@ -50,7 +64,8 @@ func (l *Logger) WriteEphemeral(format string, a ...any) {
 		termenv.ClearLine()
 	}
 
-	format = colorizeL(format, color.Magenta)
+	a = colorizeArguments(colorOk, a)
+	format = colorizeL(format, colorOk)
 	fmt.Fprintf(l.Stdout, format+"\n", a...)
 	l.prevEph = true
 }
@@ -66,6 +81,7 @@ func (l *Logger) Err(format string, a ...any) {
 		l.prevEph = false
 	}
 
-	format = colorizeL(format, color.Red)
+	a = colorizeArguments(colorErr, a)
+	format = colorizeL(format, colorErr)
 	fmt.Fprintf(l.Stdout, format+"\n", a...)
 }

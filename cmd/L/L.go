@@ -1,14 +1,15 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/muesli/termenv"
 	"github.com/spf13/pflag"
 
 	"github.com/btvoidx/L"
-	"github.com/btvoidx/L/internal/color"
 	"github.com/btvoidx/L/internal/logger"
 )
 
@@ -41,26 +42,32 @@ func main() {
 
 	pflag.Usage = func() {
 		var usage = `L 0.0.0
-			
-			Usage: ` + color.Magenta("L --list --silent [task1 task2 ...]") + `
-			Runs the specified task(s). Falls back to the ` + color.Magenta("default") + ` if no task name was specified.
 
-			Example: ` + color.Magenta("L hello") + ` with the following ` + color.Magenta("tasks.lua") + ` file will generate an ` + color.Magenta("output.txt") + ` file with the content "Hello World!".
+		Usage: %s
+		Runs the specified task(s). Falls back to the %s if no task name was specified.
 
-			'''
-			function task.hello()
-			  print("Writing to a file named 'output.txt' now...")
-			  file = io.open("output.txt", "w")
-			  file:write("Hello World!")
-			  file:close()
-			  print("Done writing!")
-			end
-			'''
+		Example: %s with the following %s file will generate an %s file with the content "Hello World!".
 
-			Options:
-			` + pflag.CommandLine.FlagUsages()
+		'''
+		function task.hello()
+			print("Writing to a file named 'output.txt' now...")
+			file = io.open("output.txt", "w")
+			file:write("Hello World!")
+			file:close()
+			print("Done writing!")
+		end
+		'''
 
-		log.Write(strings.ReplaceAll(usage, "\t", ""))
+		Options:
+		` + pflag.CommandLine.FlagUsages()
+
+		log.Write(strings.ReplaceAll(usage, "\t", ""),
+			termenv.String("L --list --silent [task1 task2 ...]"),
+			termenv.String("default"),
+			termenv.String("L hello"),
+			termenv.String("tasks.lua"),
+			termenv.String("output.txt"),
+		)
 	}
 
 	if helpFlag {
@@ -68,33 +75,38 @@ func main() {
 		return
 	}
 
-	// if initFlag {
-	// 	var contents = `
-	// 		-- https://github.com/btvoidx/L
+	if initFlag {
+		dir, _ := os.Getwd()
 
-	// 		function task.default()
-	// 		  local to_say = "Hello Loser (Lua+Cool+User)"
-	// 		  description 'Says ' .. to_say
-	// 		  print(to_say)
-	// 		end
-	// 		`
+		_, err := os.Open("tasks.lua")
+		if err == nil {
+			log.Err("L: %s already exists in %s", termenv.String("tasks.lua"), termenv.String(dir))
+			return
+		}
 
-	// 	_, err := os.Open("tasks.lua")
-	// 	if err == nil {
-	// 		log.Err("L: %s already exists in %s",
-	// 		color.Magenta("tasks.lua"),
-	// 		color.Magenta(dir),)
-	// 		return
-	// 	}
+		f, err := os.Create("tasks.lua")
+		if err != nil {
+			panic(err) // todo!
+		}
+		defer f.Close()
 
-	// 	f, err := os.Create("tasks.lua")
-	// 	if err != nil {
-	// 		panic(err)
-	// 	}
-	// 	defer f.Close()
+		var contents = `-- https://github.com/btvoidx/L
 
-	// 	return
-	// }
+			function task.default()
+			  description 'Says "Hello World"'
+			  print("Hello World")
+			end
+		`
+
+		_, err = fmt.Fprint(f, strings.ReplaceAll(contents, "\t", ""))
+		if err != nil {
+			panic(err) // todo!
+		}
+
+		log.Write("L: created %s in %s", termenv.String("tasks.lua"), termenv.String(dir))
+
+		return
+	}
 
 	if timeout <= 0 {
 		// Seems like a fair deal.
@@ -119,9 +131,9 @@ func main() {
 		if strings.HasPrefix(s, "open") && strings.HasSuffix(s, "no such file or directory") {
 			dir, _ := os.Getwd()
 			log.Err("L: %s was not found in %s: use %s to create a new one",
-				color.Magenta(entrypoint),
-				color.Magenta(dir),
-				color.Magenta("L --init"))
+				termenv.String(entrypoint),
+				termenv.String(dir),
+				termenv.String("L --init"))
 			return
 		}
 

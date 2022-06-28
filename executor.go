@@ -8,10 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/btvoidx/L/internal/color"
-	"github.com/btvoidx/L/internal/logger"
+	"github.com/muesli/termenv"
 	lua "github.com/yuin/gopher-lua"
 	"github.com/yuin/gopher-lua/parse"
+
+	"github.com/btvoidx/L/internal/logger"
 )
 
 type Executor struct {
@@ -103,7 +104,7 @@ func (e *Executor) Run(taskName string, timeout time.Duration) (code int, err er
 		}
 		return true
 	}() {
-		e.Logger.Err("L: task %s not found", color.Red(taskName))
+		e.Logger.Err("L: task %s not found", termenv.String(taskName))
 		return 1, nil
 	}
 
@@ -118,7 +119,7 @@ func (e *Executor) Run(taskName string, timeout time.Duration) (code int, err er
 		return 1, err
 	}
 
-	e.Logger.Write("L: running %s", color.Magenta(taskName))
+	e.Logger.Write("L: running %s", termenv.String(taskName))
 
 	L.SetFuncs(L.G.Global, map[string]lua.LGFunction{
 		"description": noop,
@@ -136,7 +137,7 @@ func (e *Executor) Run(taskName string, timeout time.Duration) (code int, err er
 		Protect: true,
 	}); err != nil {
 		if strings.Contains(err.Error(), "context deadline exceeded") {
-			e.Logger.Err("L: cancelled %s due to it taking too long to run (>%s); you may want to adjust your timeout argument", color.Red(taskName), timeout)
+			e.Logger.Err("L: cancelled %s due to it taking too long to run (>%s); you may want to adjust your timeout argument", termenv.String(taskName), timeout)
 			return 1, nil
 		}
 		return 1, err
