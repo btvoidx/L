@@ -58,6 +58,7 @@ func (e *Executor) loadScript(L *lua.LState) error {
 	e.Logger.WriteEphemeral("L: loading script")
 
 	L.G.Global.RawSetString("task", &lua.LTable{})
+	L.G.Global.RawSetString("_L", lua.LString(os.Args[0]))
 
 	L.Push(L.NewFunctionFromProto(e.fnproto))
 	err := L.PCall(0, lua.MultRet, nil)
