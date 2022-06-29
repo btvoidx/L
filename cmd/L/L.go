@@ -156,9 +156,10 @@ func main() {
 			} else {
 				log.Write("- %s: %s", termenv.String(t.Name), t.Description)
 			}
-			// if t.Dependencies != nil && len(t.Dependencies) != 0 {
-			// 	log.Write("  %s: %s", termenv.String(t.Name), t.Description)
-			// }
+
+			if t.Sources != nil && len(t.Sources) != 0 {
+				log.Write("  sources: %s", strings.Join(t.Sources, ", "))
+			}
 		}
 
 		return

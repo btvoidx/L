@@ -29,8 +29,6 @@ type TaskMeta struct {
 	Sources      []string
 }
 
-func noop(l *lua.LState) int { return 0 }
-
 // Parses tasks script and compiles it for future use.
 func (e *Executor) Compile() error {
 	file, err := os.Open(e.Entrypoint)
@@ -99,10 +97,10 @@ func (e *Executor) Run(taskName string) (code int, err error) {
 	e.Logger.Write("L: running %s", termenv.String(taskName))
 
 	L.SetFuncs(L.G.Global, map[string]lua.LGFunction{
-		"description": noop,
-		"depends":     noop,
-		"defer":       noop,
-		"sources":     noop,
+		"description": luaNoop,
+		"depends":     luaNoop,
+		"defer":       luaNoop,
+		"sources":     luaNoop,
 	})
 
 	// Guaranteed correct data types, checked by call to List() above
@@ -170,15 +168,13 @@ func (e *Executor) List() ([]TaskMeta, error) {
 		}
 
 		var description string
+		var sources []string
 
 		L.SetFuncs(L.G.Global, map[string]lua.LGFunction{
-			"description": func(l *lua.LState) int {
-				description = l.CheckString(1)
-				return 0
-			},
-			"depends": noop,
-			"defer":   noop,
-			"sources": noop,
+			"description": luaSetTaskDescription(&description),
+			"depends":     luaNoop,
+			"sources":     luaSetTaskSources(&sources),
+			"defer":       luaNoop,
 		})
 
 		if err := L.CallByParam(lua.P{
@@ -186,6 +182,7 @@ func (e *Executor) List() ([]TaskMeta, error) {
 			Protect: true,
 		}); err != nil {
 			if !strings.Contains(err.Error(), "attempt to call a non-function object") {
+				// todo propogate errors up
 				return
 			}
 		}
@@ -193,6 +190,7 @@ func (e *Executor) List() ([]TaskMeta, error) {
 		tasks = append(tasks, TaskMeta{
 			Name:        k.String(),
 			Description: description,
+			Sources:     sources,
 		})
 	})
 
