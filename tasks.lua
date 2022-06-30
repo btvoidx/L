@@ -5,8 +5,17 @@ function task.build()
   depends { task.tidy, task.test, task.lint }
   sources { "**/*.go", "go.mod" }
 
-  os.execute("go build -o bin ./cmd/L")
-  print("Build done, binaries are in 'bin' directory")
+  for GOOS, ext in pairs({ ["windows"] = "win.exe", ["linux"] = "linux", ["darwin"] = "macos" }) do
+    print("Building for " .. GOOS)
+    os.setenv("GOOS", GOOS)
+    os.execute(string.format("go build -o bin/L_%s ./cmd/L", ext))
+
+    -- if os.os() ~= "windows" and GOOS ~= "windows" then
+    --   os.execute("chmod +x ")
+    -- end
+  end
+
+  print("Builds done, binaries are in 'bin' directory")
 end
 
 function task.tidy()

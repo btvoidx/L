@@ -1,6 +1,10 @@
 package L
 
-import lua "github.com/yuin/gopher-lua"
+import (
+	"runtime"
+
+	lua "github.com/yuin/gopher-lua"
+)
 
 func luaNoop(l *lua.LState) int { return 0 }
 
@@ -29,4 +33,9 @@ func luaSetTaskSources(arr *[]string) func(*lua.LState) int {
 		})
 		return 0
 	}
+}
+
+func luaGetOs(L *lua.LState) int {
+	L.Push(lua.LString(runtime.GOOS))
+	return 1
 }

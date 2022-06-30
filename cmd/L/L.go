@@ -120,7 +120,7 @@ func main() {
 			return
 		}
 
-		if strings.HasPrefix(s, "open") && strings.HasSuffix(s, "no such file or directory") {
+		if strings.HasPrefix(s, "open") {
 			dir, _ := os.Getwd()
 			log.Err("L: %s was not found in %s: use %s to create a new one",
 				termenv.String(entrypoint),

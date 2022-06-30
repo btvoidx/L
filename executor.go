@@ -57,6 +57,7 @@ func (e *Executor) loadScript(L *lua.LState) error {
 
 	L.G.Global.RawSetString("task", &lua.LTable{})
 	L.G.Global.RawSetString("_L", lua.LString(os.Args[0]))
+	L.G.Global.RawGetString("os").(*lua.LTable).RawSetString("os", L.NewFunction(luaGetOs))
 
 	L.Push(L.NewFunctionFromProto(e.fnproto))
 	err := L.PCall(0, lua.MultRet, nil)
@@ -181,10 +182,10 @@ func (e *Executor) List() ([]TaskMeta, error) {
 			Fn:      v.(*lua.LFunction),
 			Protect: true,
 		}); err != nil {
-			if !strings.Contains(err.Error(), "attempt to call a non-function object") {
-				// todo propogate errors up
-				return
-			}
+			// if !strings.Contains(err.Error(), "attempt to call a non-function object") {
+			// 	// todo propogate errors up
+			// 	return
+			// }
 		}
 
 		tasks = append(tasks, TaskMeta{
