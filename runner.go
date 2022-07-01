@@ -8,16 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/muesli/termenv"
 	lua "github.com/yuin/gopher-lua"
 	"github.com/yuin/gopher-lua/parse"
-
-	"github.com/btvoidx/L/internal/logger"
 )
 
-type Executor struct {
-	Entrypoint    string
-	Logger        *logger.Logger
+type Runner struct {
 	fnproto       *lua.FunctionProto
 	taskinfoCache []TaskMeta
 }
@@ -30,20 +25,20 @@ type TaskMeta struct {
 }
 
 // Parses tasks script and compiles it for future use.
-func (e *Executor) Compile() error {
-	file, err := os.Open(e.Entrypoint)
+func (e *Runner) Compile(entryport string) error {
+	file, err := os.Open(entryport)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
 
 	reader := bufio.NewReader(file)
-	chunk, err := parse.Parse(reader, e.Entrypoint)
+	chunk, err := parse.Parse(reader, entryport)
 	if err != nil {
 		return fmt.Errorf("parse error: %w", err)
 	}
 
-	proto, err := lua.Compile(chunk, e.Entrypoint)
+	proto, err := lua.Compile(chunk, entryport)
 	if err != nil {
 		return fmt.Errorf("compile error: %w", err)
 	}
@@ -52,9 +47,7 @@ func (e *Executor) Compile() error {
 	return nil
 }
 
-func (e *Executor) loadScript(L *lua.LState) error {
-	e.Logger.WriteEphemeral("L: loading script")
-
+func (e *Runner) loadScript(L *lua.LState) error {
 	L.G.Global.RawSetString("task", &lua.LTable{})
 	L.G.Global.RawSetString("_L", lua.LString(os.Args[0]))
 	L.G.Global.RawGetString("os").(*lua.LTable).RawSetString("os", L.NewFunction(luaGetOs))
@@ -69,7 +62,7 @@ func (e *Executor) loadScript(L *lua.LState) error {
 }
 
 // Runs a given task
-func (e *Executor) Run(taskName string) (code int, err error) {
+func (e *Runner) Run(taskName string) (code int, err error) {
 	taskList, err := e.List()
 	if err != nil {
 		return 1, err
@@ -84,7 +77,6 @@ func (e *Executor) Run(taskName string) (code int, err error) {
 		}
 		return true
 	}() {
-		e.Logger.Err("L: task %s not found", termenv.String(taskName))
 		return 1, nil
 	}
 
@@ -94,8 +86,6 @@ func (e *Executor) Run(taskName string) (code int, err error) {
 	if err := e.loadScript(L); err != nil {
 		return 1, err
 	}
-
-	e.Logger.Write("L: running %s", termenv.String(taskName))
 
 	L.SetFuncs(L.G.Global, map[string]lua.LGFunction{
 		"description": luaNoop,
@@ -119,7 +109,7 @@ func (e *Executor) Run(taskName string) (code int, err error) {
 }
 
 // Returns all tasks from loaded script, by running it in safe-ish mode with harsh-ish timeout.
-func (e *Executor) List() ([]TaskMeta, error) {
+func (e *Runner) List() ([]TaskMeta, error) {
 	// This timeout is highly debatable.
 	// To be fair, anything under about 80ms will feel snappy for most people.
 	const initTimeout = 60 * time.Millisecond

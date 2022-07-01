@@ -6,70 +6,61 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/muesli/termenv"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/pflag"
 
 	"github.com/btvoidx/L"
-	"github.com/btvoidx/L/internal/logger"
+)
+
+var (
+	mainStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("141"))
+	successStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("48"))
+	errStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
+	subtleStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("239"))
+	errSymbol    = errStyle.Bold(true).SetString("L [error]").String()
+	lSymbol      = mainStyle.Bold(true).SetString("L").String()
 )
 
 func main() {
 	var (
-		listFlag    bool
-		helpFlag    bool
-		silentFlag  bool
-		verboseFlag bool
-		entrypoint  string
-		initFlag    bool
+		entrypointPath string
+		helpFlag       bool
+		listFlag       bool
+		initFlag       bool
 	)
 
-	pflag.BoolVarP(&listFlag, "list", "l", false, "lists all tasks")
+	pflag.StringVarP(&entrypointPath, "taskfile", "f", "tasks.lua", "choose tasks file")
 	pflag.BoolVarP(&helpFlag, "help", "h", false, "shows L usage")
-	pflag.BoolVar(&silentFlag, "silent", false, "disables output from L")
-	pflag.BoolVar(&verboseFlag, "verbose", false, "enables verbose mode")
-	pflag.StringVarP(&entrypoint, "taskfile", "f", "tasks.lua", "choose tasks file")
+	pflag.BoolVarP(&listFlag, "list", "l", false, "lists all tasks")
+	// pflag.BoolVar(&silentFlag, "silent", false, "disables output from L")
+	// pflag.BoolVar(&verboseFlag, "verbose", false, "enables verbose mode")
 	pflag.BoolVar(&initFlag, "init", false, "creates a default tasks.lua file")
 	pflag.Parse()
 
-	log := logger.Logger{
-		Stdout:  os.Stdout,
-		Stderr:  os.Stderr,
-		Verbose: verboseFlag,
-		Silent:  silentFlag,
-	}
-
-	pflag.Usage = func() {
-		var usage = `L 0.0.0
-
-		Usage: %s
-		Runs the specified task(s). Falls back to the %s if no task name was specified.
-
-		Example: %s with the following %s file will generate an %s file with the content "Hello World!".
-
-		'''
-		function task.hello()
-			print("Writing to a file named 'output.txt' now...")
-			file = io.open("output.txt", "w")
-			file:write("Hello World!")
-			file:close()
-			print("Done writing!")
-		end
-		'''
-
-		Options:
-		` + pflag.CommandLine.FlagUsages()
-
-		log.Write(strings.ReplaceAll(usage, "\t", ""),
-			termenv.String("L --list --silent [task1 task2 ...]"),
-			termenv.String("default"),
-			termenv.String("L hello"),
-			termenv.String("tasks.lua"),
-			termenv.String("output.txt"),
-		)
-	}
-
 	if helpFlag {
-		pflag.Usage()
+		kw := lipgloss.NewStyle().Foreground(lipgloss.Color("141"))
+		fn := lipgloss.NewStyle().Foreground(lipgloss.Color("208"))
+		str := lipgloss.NewStyle().Foreground(lipgloss.Color("71"))
+
+		usage := strings.ReplaceAll(lSymbol+` 0.0.0
+			Usage: `+mainStyle.Render("L --list --silent [task1 task2 ...]")+`
+			Runs the specified task(s). Falls back to `+mainStyle.Render("default")+` if no task name was specified.
+			Example: `+mainStyle.Render("L hello")+` with the following `+mainStyle.Render("tasks.lua")+` file will generate an `+mainStyle.Render("output.txt")+` file with the content "Hello World!".
+			'''
+			`+kw.Render("function")+` task.`+fn.Render("hello")+`()
+			  `+fn.Render("print")+`(`+str.Render(`"Writing to a file named 'output.txt' now..."`)+`)
+			  `+kw.Render("local")+` file = io.`+fn.Render("open")+`(`+str.Render(`"output.txt"`)+`, `+str.Render(`"w"`)+`)
+			  file:`+fn.Render("write")+`(`+str.Render(`"Hello World!"`)+`)
+			  file:`+fn.Render("close")+`()
+			  `+fn.Render("print")+`(`+str.Render(`"Done writing!"`)+`)
+			`+kw.Render("end")+`
+			'''
+
+			Options:
+			`+pflag.CommandLine.FlagUsages(), "\t", "")
+
+		fmt.Println(usage)
 		return
 	}
 
@@ -78,7 +69,7 @@ func main() {
 
 		_, err := os.Open("tasks.lua")
 		if err == nil {
-			log.Err("L: %s already exists in %s", termenv.String("tasks.lua"), termenv.String(dir))
+			fmt.Printf("%s: %s already exists in %s\n", errSymbol, errStyle.Render(entrypointPath), errStyle.Render(dir))
 			return
 		}
 
@@ -101,47 +92,45 @@ func main() {
 			panic(err) // todo!
 		}
 
-		log.Write("L: created %s in %s", termenv.String("tasks.lua"), termenv.String(dir))
+		fmt.Printf("%s: created %s in %s\n", lSymbol, mainStyle.Render(entrypointPath), mainStyle.Render(dir))
 
 		return
 	}
 
-	e := L.Executor{
-		Entrypoint: entrypoint,
-		Logger:     &log,
-	}
+	r := &L.Runner{}
 
-	if err := e.Compile(); err != nil {
+	if err := r.Compile(entrypointPath); err != nil {
 		s := err.Error()
 		if strings.HasPrefix(s, "parse error") {
 			s = strings.ReplaceAll(s, "parse error: ", "")
 			s = strings.ReplaceAll(s, ":   parse error", "")
-			log.Err("L: parse error:\n%s", s)
+			fmt.Printf("%s: parse error:\n%s", errSymbol, s)
 			return
 		}
 
 		if strings.HasPrefix(s, "open") {
 			dir, _ := os.Getwd()
-			log.Err("L: %s was not found in %s: use %s to create a new one",
-				termenv.String(entrypoint),
-				termenv.String(dir),
-				termenv.String("L --init"))
+			fmt.Printf("%s: %s was not found in %s: use %s to create a new one\n",
+				errSymbol,
+				mainStyle.Render(entrypointPath),
+				mainStyle.Render(dir),
+				mainStyle.Render("L --init"))
+
 			return
 		}
 
-		log.Err("L: error:\n%s", s)
+		fmt.Printf("%s: error:\n%s", errSymbol, s)
 		return
 	}
 
 	if listFlag {
-		tasks, err := e.List()
+		tasks, err := r.List()
 		if err != nil {
-			log.Err("L: %s", err)
-			return
+			panic(err) // todo!
 		}
 
 		if len(tasks) == 0 {
-			log.Write("L: no tasks available")
+			fmt.Printf("%s: no tasks available\n", errSymbol)
 			return
 		}
 
@@ -149,30 +138,32 @@ func main() {
 			return strings.Compare(tasks[i].Name, tasks[j].Name) == -1
 		})
 
-		log.Write("L: all available tasks:")
-		for _, t := range tasks {
-			if t.Description == "" {
-				log.Write("- %s", termenv.String(t.Name))
+		fmt.Printf("%s: all available tasks:", lSymbol)
+		for _, task := range tasks {
+			if task.Description != "" {
+				fmt.Printf("\n- %s: %s", mainStyle.Render(task.Name), task.Description)
 			} else {
-				log.Write("- %s: %s", termenv.String(t.Name), t.Description)
+				fmt.Printf("\n- %s %s", mainStyle.Render(task.Name), subtleStyle.Render("(description not found)"))
 			}
 
-			if t.Sources != nil && len(t.Sources) != 0 {
-				log.Write("  sources: %s", strings.Join(t.Sources, ", "))
+			if len(task.Sources) != 0 {
+				fmt.Printf("\n  tracks: %s", strings.Join(task.Sources, ", "))
 			}
 		}
 
+		fmt.Println()
 		return
 	}
 
-	taskNames := pflag.Args()
-	if len(taskNames) == 0 {
-		taskNames = []string{"default"}
+	taskQueue := pflag.Args()
+	if len(taskQueue) == 0 {
+		taskQueue = []string{"default"}
 	}
 
-	for _, tn := range taskNames {
-		if _, err := e.Run(tn); err != nil {
-			log.Err("L: %s", err.Error())
-		}
+	if err := tea.NewProgram(model{
+		TaskQueue: taskQueue,
+		Runner:    r,
+	}).Start(); err != nil {
+		fmt.Printf("Alas, there's been an error: %v", err)
 	}
 }

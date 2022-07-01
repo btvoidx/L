@@ -19,6 +19,6 @@ function task.build()
 end
 
 function task.tidy()
-  description 'Runs "go mod tidy"'
+  -- description 'Runs "go mod tidy"'
   os.execute("go mod tidy")
 end
